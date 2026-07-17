@@ -207,34 +207,34 @@ def parse_markdown(content: str) -> List[Dict[str, Any]]:
     lines = content.splitlines()
     nodes = []
     
-    # Current active state
-    current_heading = None
-    current_title = ""
-    current_level = 0
-    current_body_lines = []
+    # Current active state of parser
+    active_heading = None
+    active_title = ""
+    active_level = 0
+    active_body_lines = []
     
-    # Stack of active parents: list of dicts with keys 'level', 'title', 'path'
-    stack = []
+    # Hierarchical parser stack keeping track of parent levels
+    active_hierarchy_stack = []
     
-    # To track sibling duplicates and generate unique paths: parent_path -> {title: count}
-    path_counts = {}
+    # Sibling tracker mapping parent path to heading occurrences (for uniqueness suffix)
+    sibling_suffix_tracker = {}
 
     def commit_current_node():
-        nonlocal current_heading, current_title, current_level, current_body_lines
-        if current_heading is None:
+        nonlocal active_heading, active_title, active_level, active_body_lines
+        if active_heading is None:
             return
             
-        body_text = "\n".join(current_body_lines).strip()
+        body_text = "\n".join(active_body_lines).strip()
         
-        # Pop stack until we find parent (level < current_level)
-        while stack and stack[-1]["level"] >= current_level:
-            stack.pop()
+        # Pop stack until we find parent (level < active_level)
+        while active_hierarchy_stack and active_hierarchy_stack[-1]["level"] >= active_level:
+            active_hierarchy_stack.pop()
             
-        parent_path = stack[-1]["path"] if stack else ""
+        parent_path = active_hierarchy_stack[-1]["path"] if active_hierarchy_stack else ""
         
         # Generate unique title path
-        parent_tracker = path_counts.setdefault(parent_path, {})
-        base_title = current_title
+        parent_tracker = sibling_suffix_tracker.setdefault(parent_path, {})
+        base_title = active_title
         if base_title in parent_tracker:
             parent_tracker[base_title] += 1
             unique_title = f"{base_title} #{parent_tracker[base_title]}"
@@ -245,17 +245,17 @@ def parse_markdown(content: str) -> List[Dict[str, Any]]:
         path = f"{parent_path}/{unique_title}"
         
         nodes.append({
-            "heading": current_heading,
+            "heading": active_heading,
             "title": unique_title,
-            "level": current_level,
+            "level": active_level,
             "body_text": body_text,
             "path": path,
             "parent_path": parent_path or None
         })
         
         # Push current node to stack
-        stack.append({
-            "level": current_level,
+        active_hierarchy_stack.append({
+            "level": active_level,
             "title": unique_title,
             "path": path
         })
@@ -268,24 +268,22 @@ def parse_markdown(content: str) -> List[Dict[str, Any]]:
             
             # Start new section
             hashes, title_text = match.groups()
-            current_heading = line.strip()
-            current_title = title_text.strip()
-            current_level = len(hashes)
-            current_body_lines = []
+            active_heading = line.strip()
+            active_title = title_text.strip()
+            active_level = len(hashes)
+            active_body_lines = []
         else:
             # Accumulate body text
             # Skip empty lines at the very beginning of a section, but keep internal blank lines
-            if current_heading is not None:
-                current_body_lines.append(line)
+            if active_heading is not None:
+                active_body_lines.append(line)
             else:
                 # If there is content before the first header, create an implicit root node
-                # Or if it's metadata/blank lines. In ct200_manual.md, the first line is `# CardioTrack...`
-                # so this case won't be hit for content, but we handle it just in case.
                 if line.strip():
-                    current_heading = "# Document Root"
-                    current_title = "Document Root"
-                    current_level = 1
-                    current_body_lines = [line]
+                    active_heading = "# Document Root"
+                    active_title = "Document Root"
+                    active_level = 1
+                    active_body_lines = [line]
 
     # Commit the final section
     commit_current_node()

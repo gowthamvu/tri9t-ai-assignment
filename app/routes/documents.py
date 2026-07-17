@@ -210,3 +210,45 @@ def list_document_versions(document_id: int, db: Session = Depends(get_db)):
             detail=f"Document with ID {document_id} not found."
         )
     return db.query(DocumentVersion).filter(DocumentVersion.document_id == document_id).all()
+
+
+@router.get("/{document_id}/stats", status_code=status.HTTP_200_OK)
+def get_document_statistics(document_id: int, db: Session = Depends(get_db)):
+    """
+    Retrieves high-level metadata statistics for a document, including total version counts,
+    node count in the latest version, heading level distributions, and total custom selections.
+    """
+    doc = db.query(Document).filter(Document.id == document_id).first()
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document with ID {document_id} not found."
+        )
+
+    versions_count = len(doc.versions)
+    
+    # Resolve latest version
+    latest_version = db.query(DocumentVersion)\
+        .filter(DocumentVersion.document_id == document_id)\
+        .order_by(DocumentVersion.created_at.desc())\
+        .first()
+
+    nodes_count = 0
+    level_counts = {}
+    if latest_version:
+        nodes = db.query(Node).filter(Node.version_id == latest_version.id).all()
+        nodes_count = len(nodes)
+        for node in nodes:
+            key = f"H{node.level}"
+            level_counts[key] = level_counts.get(key, 0) + 1
+
+    selections_count = db.query(Selection).filter(Selection.version_id.in_([v.id for v in doc.versions])).count()
+
+    return {
+        "document_name": doc.name,
+        "total_versions": versions_count,
+        "latest_version_label": latest_version.version_label if latest_version else None,
+        "nodes_count_latest": nodes_count,
+        "selections_count": selections_count,
+        "heading_distribution": level_counts
+    }

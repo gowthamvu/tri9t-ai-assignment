@@ -130,6 +130,26 @@ def search_nodes(
         (Node.heading.like(search_pattern) | Node.body_text.like(search_pattern))
     ).all()
 
+    # ── Fuzzy Matching Fallback (Typo Tolerance) ──────────────────────────────
+    if not nodes:
+        import difflib
+        all_nodes = db.query(Node).filter(Node.version_id == version_id).all()
+        fuzzy_results = []
+        for n in all_nodes:
+            title_score = difflib.SequenceMatcher(None, query.lower(), n.title.lower()).ratio()
+            body_score = 0.0
+            # If body_text is short, compare the first 50 chars as well
+            if n.body_text:
+                body_score = difflib.SequenceMatcher(None, query.lower(), n.body_text[:100].lower()).ratio()
+            
+            best_score = max(title_score, body_score)
+            if best_score > 0.35:  # threshold of 35% similarity
+                fuzzy_results.append((best_score, n))
+                
+        # Sort by similarity score descending and pick top 10
+        fuzzy_results.sort(key=lambda x: x[0], reverse=True)
+        nodes = [n for score, n in fuzzy_results[:10]]
+
     return nodes
 
 @router.get("/{node_id}", response_model=NodeDetailResponse)

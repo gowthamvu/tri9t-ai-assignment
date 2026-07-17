@@ -274,3 +274,43 @@ def test_staleness_detected_after_v2_ingest(mock_llm):
     assert len(data["impacted_nodes"]) == 1
     assert data["impacted_nodes"][0]["status"] == "modified"
     assert "diff" in data["impacted_nodes"][0]
+
+
+def test_fuzzy_search_fallback():
+    """Verify that search falls back to fuzzy matching on spelling mistakes."""
+    md = "# Manual\n## Device Calibration\nBody content here.\n"
+    res = client.post("/api/documents/ingest", json={
+        "document_name": "Test Device",
+        "version_label": "v1",
+        "markdown_content": md
+    }).json()
+    doc_id = res["version"]["document_id"]
+
+    # Search with typo 'Calbration' instead of 'Calibration'
+    r = client.get(f"/api/nodes/search?document_id={doc_id}&query=Calbration")
+    assert r.status_code == 200
+    results = r.json()
+    assert len(results) >= 1
+    assert "Calibration" in results[0]["title"]
+
+
+def test_document_statistics():
+    """Verify the document statistics API returns correct counts and schema."""
+    md = "# Manual\n## Section A\nContent.\n### Subsection A.1\nContent.\n"
+    res = client.post("/api/documents/ingest", json={
+        "document_name": "Stats Device",
+        "version_label": "v1",
+        "markdown_content": md
+    }).json()
+    doc_id = res["version"]["document_id"]
+
+    r = client.get(f"/api/documents/{doc_id}/stats")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["document_name"] == "Stats Device"
+    assert data["total_versions"] == 1
+    assert data["nodes_count_latest"] == 3
+    assert data["heading_distribution"]["H1"] == 1
+    assert data["heading_distribution"]["H2"] == 1
+    assert data["heading_distribution"]["H3"] == 1
+

@@ -1,1 +1,1 @@
-# tri9t-ai
+# tri9t-ai-assignment
